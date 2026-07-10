@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Research Assistant - Premium Multi-Platform Insights</title>
+    <!-- Meta Descriptions for SEO -->
+    <meta name="description" content="An advanced, premium AI Research Assistant. Research YouTube, Instagram, LinkedIn, and local PDF documents seamlessly. Get instant summaries and interactive follow-ups.">
+    <!-- Google Fonts: Outfit (headings) & Inter (body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', path='js/script.js') }}" defer></script>
+</head>
+<body class="dark-theme">
+    <!-- Floating Background Blur Circles -->
+    <div class="bg-glow blob-indigo"></div>
+    <div class="bg-glow blob-green"></div>
+    <div class="bg-glow blob-purple"></div>
+
+    <!-- Top Fixed Navigation Bar -->
+    <nav class="navbar" id="main-navbar">
+        <div class="nav-left">
+            <button class="icon-btn sidebar-toggle-btn" id="sidebar-toggle" aria-label="Toggle Sidebar">
+                <i data-lucide="menu"></i>
+            </button>
+            <div class="logo-container">
+                <div class="logo-icon-wrapper">
+                    <i data-lucide="search-code" class="logo-icon"></i>
+                </div>
+                <span class="logo-text">AI Research Assistant</span>
+            </div>
+        </div>
+        <div class="nav-right">
+            <button class="icon-btn theme-toggle-btn" id="theme-toggle" title="Toggle Theme" aria-label="Toggle Theme">
+                <i data-lucide="sun" class="sun-icon"></i>
+                <i data-lucide="moon" class="moon-icon"></i>
+            </button>
+            <button class="icon-btn" id="settings-toggle" title="Settings" aria-label="Settings">
+                <i data-lucide="sliders"></i>
+            </button>
+            <a href="https://github.com" target="_blank" class="icon-btn github-btn" title="GitHub Repository" aria-label="GitHub Repository">
+                <i data-lucide="github"></i>
+            </a>
+            <button class="icon-btn right-panel-toggle-btn" id="right-panel-toggle" aria-label="Toggle Statistics">
+                <i data-lucide="bar-chart-3"></i>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Layout Container -->
+    <div class="app-layout">
+        <!-- Collapsible Left Sidebar -->
+        <aside class="sidebar" id="app-sidebar">
+            <div class="sidebar-menu">
+                <a href="#" class="sidebar-item active" id="nav-home">
+                    <i data-lucide="home"></i>
+                    <span>Home</span>
+                </a>
+                <a href="#" class="sidebar-item" id="nav-research">
+                    <i data-lucide="search"></i>
+                    <span>Research</span>
+                </a>
+                <a href="#" class="sidebar-item" id="nav-history">
+                    <i data-lucide="history"></i>
+                    <span>History</span>
+                    <span class="badge" id="history-badge">0</span>
+                </a>
+                <a href="#" class="sidebar-item" id="nav-documents">
+                    <i data-lucide="file-text"></i>
+                    <span>Documents</span>
+                </a>
+                <a href="#" class="sidebar-item" id="nav-saved">
+                    <i data-lucide="bookmark"></i>
+                    <span>Saved Results</span>
+                </a>
+                <a href="#" class="sidebar-item" id="nav-settings">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">AI</div>
+                    <div class="user-details">
+                        <span class="user-name">Guest Researcher</span>
+                        <span class="user-role">Free Tier</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Scrollable Content Area -->
+        <main class="main-content">
+            <div class="content-container">
+                <!-- Large Hero Section -->
+                <section class="hero-section" id="hero-area">
+                    <h1 class="hero-title">AI Research Assistant</h1>
+                    <p class="hero-subtitle">Research YouTube, Instagram, LinkedIn, and your own documents instantly with advanced intelligence.</p>
+                </section>
+
+                <!-- Search Card -->
+                <div class="search-card-wrapper" id="search-card-container">
+                    <div class="glass-card search-card">
+                        <form id="search-form">
+                            <div class="form-row">
+                                <div class="input-group select-group">
+                                    <label for="platform-select"><i data-lucide="layers" class="label-icon"></i> Research Platform</label>
+                                    <div class="custom-select-wrapper">
+                                        <select id="platform-select" required>
+                                            <option value="YouTube" data-icon="youtube">YouTube</option>
+                                            <option value="Instagram" data-icon="instagram">Instagram</option>
+                                            <option value="LinkedIn" data-icon="linkedin">LinkedIn</option>
+                                            <option value="PDF Documents" data-icon="file-text">PDF Documents</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="input-group textarea-group">
+                                    <label for="query-input"><i data-lucide="message-square" class="label-icon"></i> Research Topic or Query</label>
+                                    <div class="input-with-button">
+                                        <textarea id="query-input" rows="3" placeholder="What would you like to research? E.g., 'Latest trends in glassmorphism design'..." required></textarea>
+                                        <button type="submit" class="btn btn-primary btn-glow btn-ripple" id="start-research-btn">
+                                            <i data-lucide="sparkles"></i>
+                                            <span>Start Research</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Loading Card Section (Hidden by default) -->
+                <div class="glass-card loading-card hidden" id="loading-card">
+                    <div class="loading-header">
+                        <div class="spinner-wrapper">
+                            <div class="spinner"></div>
+                        </div>
+                        <div class="loading-meta">
+                            <h3>Running AI Agent</h3>
+                            <p id="loading-status">Connecting to agent instance...</p>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="loading-progress-bar"></div>
+                    </div>
+
+                    <div class="loading-steps">
+                        <div class="loading-step active" id="step-1">
+                            <div class="step-icon-wrapper">
+                                <div class="step-dot"></div>
+                                <i data-lucide="check" class="step-check"></i>
+                            </div>
+                            <span class="step-text">Connecting...</span>
+                        </div>
+                        <div class="loading-step" id="step-2">
+                            <div class="step-icon-wrapper">
+                                <div class="step-dot"></div>
+                                <i data-lucide="check" class="step-check"></i>
+                            </div>
+                            <span class="step-text">Searching platform feeds...</span>
+                        </div>
+                        <div class="loading-step" id="step-3">
+                            <div class="step-icon-wrapper">
+                                <div class="step-dot"></div>
+                                <i data-lucide="check" class="step-check"></i>
+                            </div>
+                            <span class="step-text">Collecting insights...</span>
+                        </div>
+                        <div class="loading-step" id="step-4">
+                            <div class="step-icon-wrapper">
+                                <div class="step-dot"></div>
+                                <i data-lucide="check" class="step-check"></i>
+                            </div>
+                            <span class="step-text">Analyzing database...</span>
+                        </div>
+                        <div class="loading-step" id="step-5">
+                            <div class="step-icon-wrapper">
+                                <div class="step-dot"></div>
+                                <i data-lucide="check" class="step-check"></i>
+                            </div>
+                            <span class="step-text">Generating final report...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Section (Hidden by default) -->
+                <div class="results-section-wrapper hidden" id="results-section">
+                    <div class="section-title-bar">
+                        <h2>Research Discovery</h2>
+                        <button class="btn btn-secondary btn-icon-only" id="reset-search-btn" title="Start New Research">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
+                    </div>
+
+                    <div id="results-container">
+                        <!-- Dynamic Result Card will go here -->
+                    </div>
+
+                    <!-- Follow Up Chat Interface -->
+                    <div class="chat-section glass-card" id="followup-section">
+                        <div class="chat-header">
+                            <i data-lucide="messages-square" class="chat-header-icon"></i>
+                            <div>
+                                <h4>Follow-up Analysis</h4>
+                                <p>Deepen your insights by asking additional clarifying questions</p>
+                            </div>
+                        </div>
+                        
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="chat-message assistant">
+                                <div class="chat-message-avatar"><i data-lucide="sparkles"></i></div>
+                                <div class="chat-message-bubble">
+                                    I have compiled the initial intelligence. What specific aspects would you like to explore further or refine?
+                                </div>
+                            </div>
+                        </div>
+
+                        <form id="chat-form" class="chat-input-wrapper">
+                            <input type="text" id="chat-input" placeholder="Ask a follow-up question about the results..." required autocomplete="off">
+                            <button type="submit" class="btn btn-primary chat-send-btn btn-ripple" aria-label="Send message">
+                                <i data-lucide="send"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="app-footer">
+                <span>Made with ❤️ using <a href="https://fastapi.tiangolo.com" target="_blank">FastAPI</a></span>
+            </footer>
+        </main>
+
+        <!-- Collapsible Right Panel (Stats & Recent searches) -->
+        <aside class="right-panel" id="app-right-panel">
+            <div class="right-panel-section">
+                <h3 class="panel-section-title"><i data-lucide="pie-chart"></i> Research Analytics</h3>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-total">0</span>
+                        <span class="stat-label">Total Queries</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-bookmarks">0</span>
+                        <span class="stat-label">Bookmarks</span>
+                    </div>
+                    <div class="stat-card span-two">
+                        <span class="stat-value" id="stat-favorite">-</span>
+                        <span class="stat-label">Favorite Platform</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-panel-section flex-grow">
+                <h3 class="panel-section-title"><i data-lucide="history"></i> Recent Activity</h3>
+                <div class="recent-searches-list" id="recent-searches-list">
+                    <div class="empty-recent-state">
+                        <i data-lucide="search-check" class="empty-icon"></i>
+                        <p>No recent activity. Launch your first research query!</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-panel-section">
+                <div class="system-status-card glass-card">
+                    <div class="status-indicator-row">
+                        <div class="status-dot online"></div>
+                        <span class="status-text">LLM Services Operational</span>
+                    </div>
+                    <p class="status-detail">Connected to Groq (gpt-oss-20b) and local ChromaDB environment.</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+</body>
+</html>

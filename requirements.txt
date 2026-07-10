@@ -1,0 +1,12 @@
+chromadb
+groq
+langchain-community
+langchain-text-splitters
+pypdf
+requests
+phidata
+playwright
+beautifulsoup4
+fastapi
+uvicorn
+jinja2
