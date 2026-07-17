@@ -158,7 +158,7 @@
                             <div class="spinner"></div>
                         </div>
                         <div class="loading-meta">
-                            <h3>Running AI Agent</h3>
+                            <h3 id="loading-title">Running AI Agent</h3>
                             <p id="loading-status">Connecting to agent instance...</p>
                         </div>
                     </div>
@@ -180,7 +180,7 @@
                                 <div class="step-dot"></div>
                                 <i data-lucide="check" class="step-check"></i>
                             </div>
-                            <span class="step-text">Searching platform feeds...</span>
+                            <span class="step-text" id="step-2-text">Searching platform feeds...</span>
                         </div>
                         <div class="loading-step" id="step-3">
                             <div class="step-icon-wrapper">
@@ -210,14 +210,47 @@
                 <div class="results-section-wrapper hidden" id="results-section">
                     <div class="section-title-bar">
                         <h2>Research Discovery</h2>
-                        <button class="btn btn-secondary btn-icon-only" id="reset-search-btn"
-                            title="Start New Research">
-                            <i data-lucide="refresh-cw"></i>
-                        </button>
+                        <div class="section-title-actions">
+                            <!--
+                                NEW: Deep Research button.
+                                Only shown after the first (fast, single-provider) result
+                                comes back. Clicking it re-runs the SAME topic in "deep"
+                                mode, which queries every configured provider (DuckDuckGo,
+                                Serper, Tavily, Exa) instead of stopping at the first one,
+                                and shows which provider surfaced each source.
+                                Wire this to a backend call like:
+                                    POST /api/research { topic, deep_search: true }
+                                which should call:
+                                    agent.research(topic, deep_search=True)
+                                on the Python side (see research_agent.py).
+                            -->
+                            <button class="btn btn-secondary btn-ripple" id="deep-research-btn"
+                                title="Re-run this search using every available provider">
+                                <i data-lucide="layers"></i>
+                                <span>Deep Research (use all sources)</span>
+                            </button>
+                            <button class="btn btn-secondary btn-icon-only" id="reset-search-btn"
+                                title="Start New Research">
+                                <i data-lucide="refresh-cw"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <div id="results-container">
                         <!-- Dynamic Result Card will go here -->
+                    </div>
+
+                    <!--
+                        NEW: Provider breakdown panel. Populated by JS after a
+                        response comes back (fast OR deep mode) using the
+                        `providers_per_source` list now returned by
+                        ResearchAgent.research(...). Shows, for each cited
+                        source, which search tool (DuckDuckGo / Serper /
+                        Tavily / Exa) actually found it.
+                    -->
+                    <div class="glass-card provider-breakdown hidden" id="provider-breakdown">
+                        <h4><i data-lucide="list-tree"></i> Sources by Provider</h4>
+                        <ul id="provider-breakdown-list"></ul>
                     </div>
 
                     <!-- Follow Up Chat Interface -->
@@ -301,6 +334,75 @@
             </div>
         </aside>
     </div>
+
+    <!--
+        NEW: minimal wiring for the Deep Research button. This is intentionally
+        small and framework-agnostic since script.js wasn't provided - move
+        this logic into script.js once you wire up the real backend call.
+        It assumes:
+          - the current topic is available in #query-input
+          - your backend exposes an endpoint that accepts { topic, deep_search }
+            and returns JSON like:
+              { "article_markdown": "...", "sources": [
+                  {"url": "...", "title": "...", "provider": "DuckDuckGo"}, ... ] }
+    -->
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const deepBtn = document.getElementById("deep-research-btn");
+            const breakdownPanel = document.getElementById("provider-breakdown");
+            const breakdownList = document.getElementById("provider-breakdown-list");
+
+            if (!deepBtn) return;
+
+            deepBtn.addEventListener("click", async function () {
+                const topic = document.getElementById("query-input").value.trim();
+                if (!topic) return;
+
+                deepBtn.disabled = true;
+                deepBtn.querySelector("span").textContent = "Running Deep Research...";
+
+                try {
+                    const resp = await fetch("/research", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            platform: "Deep Search",
+                            query: topic,
+                            deep_search: true,
+                        }),
+                    });
+                    if (!resp.ok) {
+                        const errBody = await resp.json().catch(() => ({}));
+                        throw new Error(errBody.detail || `Request failed (${resp.status})`);
+                    }
+                    const data = await resp.json();
+
+                    // Populate the provider breakdown so the user can see
+                    // which tool (DuckDuckGo / Serper / Tavily / Exa) found
+                    // each source used in the report. `data.sources` comes
+                    // from run_deep_search_sync()'s "sources" field in app.py.
+                    if (Array.isArray(data.sources)) {
+                        breakdownList.innerHTML = "";
+                        data.sources.forEach(function (s) {
+                            const li = document.createElement("li");
+                            li.textContent = `${s.title || s.url} — found via ${s.provider}`;
+                            breakdownList.appendChild(li);
+                        });
+                        breakdownPanel.classList.remove("hidden");
+                    }
+
+                    // TODO: render data.summary (the article markdown) into
+                    // #results-container using whatever markdown renderer
+                    // script.js already uses for the normal (fast) result.
+                } catch (err) {
+                    console.error("Deep Research failed:", err);
+                } finally {
+                    deepBtn.disabled = false;
+                    deepBtn.querySelector("span").textContent = "Deep Research (use all sources)";
+                }
+            });
+        });
+    </script>
 </body>
 
 </html>

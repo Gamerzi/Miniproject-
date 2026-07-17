@@ -2,40 +2,42 @@
 Multi-Source AI Research Agent
 ===============================
 
-Architecture (fallback chain):
+Architecture:
 
-    DuckDuckGo
-        |
-    Serper (optional, needs SERPER_API_KEY)
-        |
-    Tavily (optional, needs TAVILY_API_KEY)
-        |
-    Exa (optional, needs EXA_API_KEY)
-        |
+    Fast mode (default): fallback chain, stops at first provider that works
+        DuckDuckGo -> Serper -> Tavily -> Exa
+
+    Deep Research mode (opt-in): queries EVERY provider that has a key
+    configured (DuckDuckGo always, plus Serper/Tavily/Exa if keys are set),
+    keeps a small number of results from each (default 3), and tags every
+    source with which provider it came from - both in the console output
+    and in the final report's "Sources" section.
+
+        DuckDuckGo  \
+        Serper       \
+        Tavily        >---> combined, de-duplicated, provider-tagged results
+        Exa          /
+                    |
     Jina Reader (reads full text of every selected URL)
         |
     LLM Analysis (Groq)
         |
-    Professional Research Report (saved as Markdown)
-
-Each search provider is tried in order. If a provider has no API key configured,
-raises an error, or returns zero results, the agent automatically falls back to
-the next provider in the chain. DuckDuckGo requires no API key and is tried first.
+    Professional Research Report (saved as Markdown, provider noted per source)
 
 Usage:
     python research_agent.py "Simulation theory"
     python research_agent.py "Quantum computing breakthroughs" --max-results 8
     python research_agent.py "AI regulation in the EU" --model gpt-4o-mini
+    python research_agent.py "AI regulation in the EU" --deep   # use every provider
 
 All API keys are read from environment variables (loaded from a .env file via
-python-dotenv). GROQ_API_KEY is required. The rest are optional — if any of
-them are missing, that provider is skipped and the fallback chain moves on to
-the next one.
+python-dotenv). GROQ_API_KEY is required. The rest are optional - if any of
+them are missing, that provider is skipped.
 """
 
 import time
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Callable, Tuple
 from datetime import datetime
 import os
@@ -57,7 +59,7 @@ from groq import Groq
 # ---------------------------------------------------------------------------
 # CONFIG - all keys come from environment variables / .env file.
 # GROQ_API_KEY is required. Everything else is optional - if unset, that
-# provider is skipped and the fallback chain just moves on to the next one.
+# provider is skipped.
 # ---------------------------------------------------------------------------
 load_dotenv()
 
@@ -77,7 +79,7 @@ class SearchResult:
     title: str
     url: str
     snippet: str = ""
-    source: str = ""
+    source: str = ""  # which provider found this (duckduckgo / serper / tavily / exa)
 
 
 @dataclass
@@ -87,6 +89,7 @@ class ArticleContent:
     text: str
     success: bool = True
     error: Optional[str] = None
+    provider: str = ""  # carried over from the SearchResult that produced this URL
 
 
 class SearchProviderError(Exception):
@@ -191,6 +194,14 @@ def search_exa(query: str, max_results: int = 5) -> List[SearchResult]:
     return results
 
 
+# Display names used in logs / the final report.
+PROVIDER_LABELS = {
+    "duckduckgo": "DuckDuckGo",
+    "serper": "Serper",
+    "tavily": "Tavily",
+    "exa": "Exa",
+}
+
 SEARCH_CHAIN: List[Tuple[str, Callable[..., List[SearchResult]]]] = [
     ("DuckDuckGo", search_duckduckgo),
     ("Serper", search_serper),
@@ -200,7 +211,8 @@ SEARCH_CHAIN: List[Tuple[str, Callable[..., List[SearchResult]]]] = [
 
 
 def search_with_fallback(query: str, max_results: int = 5, verbose: bool = True):
-    """Try each provider in the chain in order until one succeeds."""
+    """Fast mode: try each provider in order, stop at the first one that
+    returns usable results. This is the default / quick-search behavior."""
     last_error = None
     for name, func in SEARCH_CHAIN:
         try:
@@ -216,6 +228,52 @@ def search_with_fallback(query: str, max_results: int = 5, verbose: bool = True)
                 print(f"[search] {name} failed: {e}")
             continue
     raise SearchProviderError(f"All search providers failed. Last error: {last_error}")
+
+
+def search_all_providers(
+    query: str, max_results_per_provider: int = 3, verbose: bool = True
+) -> Tuple[List[SearchResult], List[str]]:
+    """Deep Research mode: query EVERY provider that has a key configured
+    (DuckDuckGo always runs since it needs no key), instead of stopping at
+    the first success.
+
+    Each provider only contributes up to `max_results_per_provider` results
+    (kept small - 1 to 3 by default) so a deep search stays fast even though
+    it fans out to every provider. Results are de-duplicated by URL and each
+    one keeps a record of which provider found it (SearchResult.source), so
+    the final report and the UI can show "found via DuckDuckGo / Serper /
+    etc." next to each source.
+
+    Returns (combined_results, providers_that_succeeded).
+    """
+    combined: List[SearchResult] = []
+    seen_urls = set()
+    providers_used: List[str] = []
+
+    for name, func in SEARCH_CHAIN:
+        try:
+            if verbose:
+                print(f"[deep-search] Trying {name}...")
+            results = func(query, max_results=max_results_per_provider)
+            new_count = 0
+            for r in results:
+                if r.url and r.url not in seen_urls:
+                    seen_urls.add(r.url)
+                    combined.append(r)
+                    new_count += 1
+            if verbose:
+                print(f"[deep-search] {name} contributed {new_count} new result(s).")
+            if new_count > 0:
+                providers_used.append(name)
+        except Exception as e:
+            if verbose:
+                print(f"[deep-search] {name} failed / skipped: {e}")
+            continue
+
+    if not combined:
+        raise SearchProviderError("Deep Research failed: every provider returned no usable results.")
+
+    return combined, providers_used
 
 
 # ---------------------------------------------------------------------------
@@ -267,25 +325,15 @@ class LLMAnalyzer:
             )
         self.client = Groq(api_key=api_key)
         self.model = model
-        # How much raw text from a source to feed into its own summarization call.
-        # Kept small so each individual call stays comfortably under Groq's
-        # tokens-per-minute limit, no matter how many sources there are.
         self.source_max_chars = source_max_chars
         self.digest_max_tokens = digest_max_tokens
         self.article_max_tokens = article_max_tokens
         self.max_retries = max_retries
         self.seconds_between_calls = seconds_between_calls
-        # openai/gpt-oss models are reasoning models: they spend tokens on hidden
-        # "thinking" before writing the actual answer, and those tokens count
-        # against max_tokens. On long/dense inputs this can burn the entire
-        # budget on reasoning and leave zero tokens for the real output, so we
-        # cap reasoning effort and keep max_tokens generous as headroom.
         self.reasoning_effort = reasoning_effort
         self._model_supports_reasoning_effort = model.startswith("openai/gpt-oss")
 
     def _call_with_retry(self, messages, max_tokens: int, temperature: float = 0.5):
-        """Call the Groq chat completion endpoint, retrying with backoff on
-        rate-limit / payload-too-large errors (HTTP 429 / 413)."""
         delay = 3
         last_error = None
         for attempt in range(1, self.max_retries + 1):
@@ -300,9 +348,6 @@ class LLMAnalyzer:
                     kwargs["reasoning_effort"] = self.reasoning_effort
                 response = self.client.chat.completions.create(**kwargs)
 
-                # Reasoning models can still come back with empty content if they
-                # exhaust max_tokens on hidden reasoning. Detect that and retry
-                # once with a larger budget instead of silently returning "".
                 content = (response.choices[0].message.content or "").strip()
                 finish_reason = response.choices[0].finish_reason
                 if not content and finish_reason == "length" and attempt < self.max_retries:
@@ -328,8 +373,6 @@ class LLMAnalyzer:
         raise last_error
 
     def _summarize_source(self, index: int, article: ArticleContent) -> str:
-        """Turn one source's raw text into a short factual digest via its own
-        small LLM call, instead of stuffing the full text into the final prompt."""
         snippet = article.text[: self.source_max_chars]
         prompt = (
             f"URL: {article.url}\n"
@@ -353,15 +396,11 @@ class LLMAnalyzer:
         )
         return (response.choices[0].message.content or "").strip()
 
-
-
     def write_article(self, topic: str, articles: List[ArticleContent]) -> str:
-        # Stage 1: summarize each source individually. Each call only sends one
-        # source's (truncated) text, so no single request comes close to the
-        # tokens-per-minute cap - no matter how many sources or how long they are.
         print(f"Summarizing {len(articles)} source(s) individually to stay under Groq's "
               f"per-request token limit...")
         digest_blocks = []
+        source_list_lines = []  # for the final "Sources" section, provider included
         for i, a in enumerate(articles, 1):
             if not a.success:
                 continue
@@ -372,19 +411,17 @@ class LLMAnalyzer:
                 print(f"    -> Failed to summarize source [{i}], skipping it: {e}")
                 continue
 
-            # A digest under ~40 chars almost always means the page had nothing
-            # usable (cookie banner, paywall, JS-only content) rather than a real
-            # article - print it so it's visible, and drop it so thin/empty
-            # digests don't drag the final article down or trigger a refusal.
             print(f"    -> Digest ({len(digest)} chars): {digest[:200]}")
             if len(digest.strip()) < 40:
                 print(f"    -> Digest too thin, dropping source [{i}]")
                 continue
 
+            provider_label = PROVIDER_LABELS.get(a.provider, a.provider or "unknown provider")
             digest_blocks.append(
-                f"SOURCE [{i}] URL: {a.url}\nTITLE: {a.title}\nDIGEST:\n{digest}\n"
+                f"SOURCE [{i}] URL: {a.url}\nTITLE: {a.title}\nFOUND VIA: {provider_label}\nDIGEST:\n{digest}\n"
             )
-            time.sleep(self.seconds_between_calls)  # space calls out across the per-minute window
+            source_list_lines.append(f"{i}. [{a.title or a.url}]({a.url}) — found via {provider_label}")
+            time.sleep(self.seconds_between_calls)
 
         if not digest_blocks:
             raise RuntimeError(
@@ -395,8 +432,6 @@ class LLMAnalyzer:
 
         combined_digests = "\n\n".join(digest_blocks)
 
-        # Stage 2: write the final article from the (much shorter) digests rather
-        # than the raw source text - this second call is also comfortably small.
         system_prompt = (
             "You are a senior investigative journalist and researcher at The New York Times. "
             "You write rigorous, well-structured, engaging long-form articles based strictly on "
@@ -407,7 +442,9 @@ class LLMAnalyzer:
             "You always deliver a finished article using whatever material you were given - you "
             "never refuse, apologize, or ask for more information. If some digests are thinner "
             "than others, you lean on the richer ones and write shorter sections for the thin "
-            "ones rather than declining the task."
+            "ones rather than declining the task. Each SOURCE block also states which search "
+            "provider (FOUND VIA) surfaced it - do not fold that into the article prose, it is "
+            "only for the Sources section at the end."
         )
 
         user_prompt = f"""Topic: {topic}
@@ -424,7 +461,9 @@ Requirements:
   digests support it, shorter is fine if they don't - never pad with filler)
 - Use subheadings to organize the piece
 - Cite sources inline as [1], [2], etc. matching the SOURCE numbers below
-- End with a "Sources" section listing each numbered source's URL
+- End with a "Sources" section listing each numbered source's URL AND which
+  search provider found it (use the FOUND VIA field given in each SOURCE
+  block below), e.g. "1. Title (url) — found via DuckDuckGo"
 - Output in Markdown
 - Do not refuse, apologize, or ask for more information - write the best
   possible article from what's given below, even if it's brief
@@ -443,9 +482,6 @@ Requirements:
         )
         article = (response.choices[0].message.content or "").strip()
 
-        # Safety net: if the model refused anyway, push back once with a
-        # sterner, more explicit instruction instead of silently returning
-        # the refusal text as if it were the article.
         refusal_markers = ("i'm sorry", "i am sorry", "i can't produce", "i cannot produce",
                             "i can't write", "i cannot write")
         if (not article or (len(article) < 300 and article.lower().startswith(refusal_markers))):
@@ -483,14 +519,40 @@ class ResearchAgent:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
-    def research(self, topic: str, verbose: bool = True):
-        print(f"\n{'=' * 60}\nResearching topic: {topic}\n{'=' * 60}\n")
+    def research(
+        self,
+        topic: str,
+        verbose: bool = True,
+        deep_search: bool = False,
+        deep_max_per_provider: int = 3,
+    ):
+        """
+        deep_search=False (default): fast mode, fallback chain, stops at the
+        first provider that returns results (current/existing behavior).
 
-        results, provider_used = search_with_fallback(topic, max_results=self.max_results, verbose=verbose)
+        deep_search=True: queries every configured provider (up to
+        `deep_max_per_provider` results each), combines + de-dupes them, and
+        tags every source with the provider that found it, both in logs and
+        in the saved report's Sources section.
+        """
+        mode_label = "DEEP RESEARCH (all providers)" if deep_search else "Quick Research"
+        print(f"\n{'=' * 60}\n{mode_label}: {topic}\n{'=' * 60}\n")
 
-        print(f"\nUsing {len(results)} result(s) from {provider_used}:")
+        if deep_search:
+            results, providers_used = search_all_providers(
+                topic, max_results_per_provider=deep_max_per_provider, verbose=verbose
+            )
+            provider_summary = ", ".join(providers_used) if providers_used else "none"
+            print(f"\nDeep Research combined {len(results)} result(s) from: {provider_summary}")
+            provider_used_label = f"Deep Search ({provider_summary})"
+        else:
+            results, provider_name = search_with_fallback(topic, max_results=self.max_results, verbose=verbose)
+            print(f"\nUsing {len(results)} result(s) from {provider_name}:")
+            provider_used_label = provider_name
+
         for r in results:
-            print(f"  - {r.title} ({r.url})")
+            label = PROVIDER_LABELS.get(r.source, r.source or "unknown")
+            print(f"  - {r.title} ({r.url})  [via {label}]")
 
         print("\nReading full article content via Jina Reader...")
         articles = []
@@ -501,6 +563,7 @@ class ResearchAgent:
             content = read_url_with_jina(r.url)
             if not content.title:
                 content.title = r.title
+            content.provider = r.source
             if content.success:
                 print(f"    -> OK ({len(content.text)} chars)")
             else:
@@ -517,10 +580,14 @@ class ResearchAgent:
 
         article_markdown = self.analyzer.write_article(topic, successful_articles)
 
-        filename = self._save_report(topic, article_markdown, provider_used, successful_articles)
+        filename = self._save_report(topic, article_markdown, provider_used_label, successful_articles)
         print(f"\nReport saved to: {filename}")
         source_urls = [a.url for a in successful_articles]
-        return article_markdown, filename, source_urls
+        providers_per_source = [
+            {"url": a.url, "title": a.title, "provider": PROVIDER_LABELS.get(a.provider, a.provider)}
+            for a in successful_articles
+        ]
+        return article_markdown, filename, source_urls, providers_per_source
 
     def _save_report(self, topic, article_markdown, provider_used, articles) -> str:
         safe_topic = "".join(c if c.isalnum() or c in " -_" else "" for c in topic).strip().replace(" ", "_")
@@ -532,7 +599,7 @@ class ResearchAgent:
         Research Report
         Topic: {topic}
         Generated: {datetime.now().isoformat()}
-        Search provider used: {provider_used}
+        Search mode: {provider_used}
         Sources read: {len(articles)}
         -->
 
@@ -555,19 +622,36 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-source AI research agent")
     parser.add_argument("topic", nargs="*", default=["Simulation theory"], help="Research topic")
     parser.add_argument("--model", default="openai/gpt-oss-20b", help="Groq model for analysis")
-    parser.add_argument("--max-results", type=int, default=5, help="Number of URLs to research")
+    parser.add_argument("--max-results", type=int, default=5, help="Number of URLs to research (fast mode)")
     parser.add_argument("--output-dir", default="reports", help="Directory to save reports")
+    parser.add_argument(
+        "--deep", action="store_true",
+        help="Deep Research mode: query every configured provider (not just the first "
+             "one that works) and tag each source with the provider that found it.",
+    )
+    parser.add_argument(
+        "--deep-max-per-provider", type=int, default=3,
+        help="Max results to keep from each provider in Deep Research mode (default: 3)",
+    )
     args = parser.parse_args()
 
     topic = " ".join(args.topic)
 
     agent = ResearchAgent(llm_model=args.model, max_results=args.max_results, output_dir=args.output_dir)
-    article, filename, source_urls = agent.research(topic)
+    article, filename, source_urls, providers_per_source = agent.research(
+        topic, deep_search=args.deep, deep_max_per_provider=args.deep_max_per_provider
+    )
 
     print("\n" + "=" * 60)
     print("FINAL ARTICLE")
     print("=" * 60 + "\n")
     print(article)
+
+    print("\n" + "=" * 60)
+    print("SOURCES BY PROVIDER")
+    print("=" * 60)
+    for s in providers_per_source:
+        print(f"  - {s['title']} ({s['url']})  [via {s['provider']}]")
 
 
 if __name__ == "__main__":

@@ -34,11 +34,98 @@ templates.env.cache = None
 class ResearchRequest(BaseModel):
     platform: str
     query: str
+    deep_search: bool = False  # True -> query every provider (DuckDuckGo/Serper/Tavily/Exa)
 
 
 class ChatRequest(BaseModel):
     query: str
     context: str
+
+
+@app.get("/reports", response_class=HTMLResponse)
+async def list_reports(request: Request):
+    """Lists every saved research report (.md file) in the reports/ folder,
+    newest first, each linking to /reports/{filename} to view it rendered."""
+    reports_dir = "reports"
+    os.makedirs(reports_dir, exist_ok=True)
+
+    files = [f for f in os.listdir(reports_dir) if f.lower().endswith(".md")]
+    # newest first, based on file modification time
+    files.sort(key=lambda f: os.path.getmtime(os.path.join(reports_dir, f)), reverse=True)
+
+    rows = "".join(
+        f'<li><a href="/reports/{f}">{f}</a></li>'
+        for f in files
+    ) or "<li>No reports saved yet.</li>"
+
+    html = f"""
+    <html>
+    <head>
+        <title>Saved Reports</title>
+        <style>
+            body {{ background:#0f1115; color:#e6e6e6; font-family: Inter, sans-serif; padding: 2rem; }}
+            a {{ color:#8ab4f8; text-decoration:none; }}
+            a:hover {{ text-decoration:underline; }}
+            ul {{ line-height: 2; }}
+            h1 {{ font-family: Outfit, sans-serif; }}
+        </style>
+    </head>
+    <body>
+        <h1>Saved Research Reports</h1>
+        <ul>{rows}</ul>
+        <p><a href="/">&larr; Back to Research Assistant</a></p>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+
+@app.get("/reports/{filename}", response_class=HTMLResponse)
+async def view_report(filename: str):
+    """Renders a single saved .md report as styled HTML in the browser."""
+    import markdown as md_lib
+
+    # Prevent path traversal (e.g. ../../app.py) - only allow plain filenames
+    # that live directly inside reports/ and end in .md
+    safe_name = os.path.basename(filename)
+    if not safe_name.lower().endswith(".md") or safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid report filename")
+
+    file_path = os.path.join("reports", safe_name)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        raw_md = f.read()
+
+    body_html = md_lib.markdown(raw_md, extensions=["tables", "fenced_code", "sane_lists"])
+
+    html = f"""
+    <html>
+    <head>
+        <title>{safe_name}</title>
+        <style>
+            body {{
+                background:#0f1115; color:#e6e6e6; font-family: Inter, sans-serif;
+                max-width: 860px; margin: 0 auto; padding: 2.5rem 1.5rem; line-height: 1.65;
+            }}
+            h1, h2, h3 {{ font-family: Outfit, sans-serif; color:#fff; }}
+            a {{ color:#8ab4f8; }}
+            table {{ border-collapse: collapse; width: 100%; margin: 1rem 0; }}
+            th, td {{ border: 1px solid #333; padding: 0.5rem 0.75rem; text-align:left; }}
+            th {{ background:#1a1d24; }}
+            hr {{ border-color:#2a2d35; }}
+            code {{ background:#1a1d24; padding: 0.1rem 0.35rem; border-radius: 4px; }}
+            .back-link {{ display:inline-block; margin-bottom: 1.5rem; }}
+        </style>
+    </head>
+    <body>
+        <a class="back-link" href="/reports">&larr; All Reports</a>
+        {body_html}
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -135,17 +222,24 @@ async def sync_database():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def run_deep_search_sync(query_topic: str):
-    """Runs the multi-source fallback-chain research agent (DuckDuckGo -> Serper ->
-    Tavily -> Exa, then Jina Reader + Groq) and shapes the result the same way the
-    other platform handlers do, so the existing frontend can render it unchanged."""
+def run_deep_search_sync(query_topic: str, deep_search: bool = False):
+    """Runs the multi-source research agent and shapes the result the same way the
+    other platform handlers do, so the existing frontend can render it unchanged.
+
+    deep_search=False (default): fast mode - fallback chain, stops at the first
+        provider that returns results (DuckDuckGo -> Serper -> Tavily -> Exa).
+    deep_search=True: queries every configured provider and tags each source
+        with which one found it (see ResearchAgent.research in research.py).
+    """
     from research import ResearchAgent
 
     # ResearchAgent is expected to read SERPER_API_KEY / TAVILY_API_KEY /
     # EXA_API_KEY / JINA_API_KEY / GROQ_API_KEY itself via os.getenv(...),
     # since load_dotenv() above already populated the process environment.
     agent = ResearchAgent(llm_model="openai/gpt-oss-20b", max_results=5, output_dir="reports")
-    article_markdown, report_path, source_urls = agent.research(query_topic, verbose=True)
+    article_markdown, report_path, source_urls, providers_per_source = agent.research(
+        query_topic, verbose=True, deep_search=deep_search
+    )
 
     main_source = source_urls[0] if source_urls else (
         f"https://duckduckgo.com/?q={query_topic.replace(' ', '+')}"
@@ -158,10 +252,13 @@ def run_deep_search_sync(query_topic: str):
         "platform": "Deep Search",
         "report_path": report_path,
         "source_urls": source_urls,
+        # Consumed by the "Sources by Provider" panel in the frontend -
+        # each entry: {"url": ..., "title": ..., "provider": "DuckDuckGo"}
+        "sources": providers_per_source,
     }
 
 
-def run_research_sync(platform_name: str, query_topic: str):
+def run_research_sync(platform_name: str, query_topic: str, deep_search: bool = False):
     if platform_name.lower() == "youtube":
         import youtube
         videos = youtube.search_youtube(query_topic, max_results=5)
@@ -286,7 +383,7 @@ Context:
         }
 
     elif platform_name.lower() == "deep search":
-        return run_deep_search_sync(query_topic)
+        return run_deep_search_sync(query_topic, deep_search=deep_search)
 
     else:
         raise ValueError("Unsupported platform selected")
@@ -325,7 +422,7 @@ async def do_research(req: ResearchRequest):
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     try:
-        result = await run_in_threadpool(run_research_sync, req.platform, req.query)
+        result = await run_in_threadpool(run_research_sync, req.platform, req.query, req.deep_search)
         return result
     except Exception as e:
         import traceback
