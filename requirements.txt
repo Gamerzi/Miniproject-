@@ -10,3 +10,6 @@ beautifulsoup4
 fastapi
 uvicorn
 jinja2
+ddgs
+exa-py
+python-dotenv

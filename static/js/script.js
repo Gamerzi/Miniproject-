@@ -8,29 +8,39 @@ document.addEventListener("DOMContentLoaded", () => {
     const rightPanel = document.getElementById("app-right-panel");
     const rightPanelToggle = document.getElementById("right-panel-toggle");
     const themeToggle = document.getElementById("theme-toggle");
-    
+
     const searchForm = document.getElementById("search-form");
     const searchCardContainer = document.getElementById("search-card-container");
     const platformSelect = document.getElementById("platform-select");
     const queryInput = document.getElementById("query-input");
-    
+
     const loadingCard = document.getElementById("loading-card");
     const loadingProgressBar = document.getElementById("loading-progress-bar");
     const loadingStatus = document.getElementById("loading-status");
-    
+
     const resultsSection = document.getElementById("results-section");
     const resultsContainer = document.getElementById("results-container");
     const resetSearchBtn = document.getElementById("reset-search-btn");
-    
+
     const chatForm = document.getElementById("chat-form");
     const chatInput = document.getElementById("chat-input");
     const chatMessages = document.getElementById("chat-messages");
-    
+
     const statTotal = document.getElementById("stat-total");
     const statBookmarks = document.getElementById("stat-bookmarks");
     const statFavorite = document.getElementById("stat-favorite");
     const recentSearchesList = document.getElementById("recent-searches-list");
     const historyBadge = document.getElementById("history-badge");
+
+    // Maps a platform name (lowercased) to its Lucide icon name. Used both for
+    // the result card badge and the recent-searches sidebar list.
+    const PLATFORM_ICON_MAP = {
+        "youtube": "youtube",
+        "instagram": "instagram",
+        "linkedin": "linkedin",
+        "pdf documents": "file-text",
+        "deep search": "globe"
+    };
 
     // ---------------------------------------------------------
     // State Variables
@@ -116,16 +126,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (rippleBtn) {
             const ripple = document.createElement("span");
             ripple.classList.add("ripple-effect");
-            
+
             const rect = rippleBtn.getBoundingClientRect();
             const size = Math.max(rect.width, rect.height);
             ripple.style.width = ripple.style.height = `${size}px`;
-            
+
             const x = e.clientX - rect.left - size / 2;
             const y = e.clientY - rect.top - size / 2;
             ripple.style.left = `${x}px`;
             ripple.style.top = `${y}px`;
-            
+
             rippleBtn.appendChild(ripple);
             setTimeout(() => ripple.remove(), 600);
         }
@@ -136,42 +146,54 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------------------------------------------------
     searchForm.addEventListener("submit", async (e) => {
         e.preventDefault();
-        
+
         const platform = platformSelect.value;
         const query = queryInput.value.trim();
-        
+
         if (!query) return;
 
         // Toggle UI states
         searchCardContainer.classList.add("hidden");
         loadingCard.classList.remove("hidden");
         resultsSection.classList.add("hidden");
-        
+
         // Reset loading step styles
         document.querySelectorAll(".loading-step").forEach(step => {
             step.classList.remove("active", "completed");
         });
         loadingProgressBar.style.width = "0%";
-        
+
         let loadingFinished = false;
 
-        // Start step-by-step progress loading animation
-        const steps = [
-            { id: "step-1", percent: 20, msg: "Connecting to agent environment..." },
-            { id: "step-2", percent: 40, msg: "Searching feeds and scrapers..." },
-            { id: "step-3", percent: 60, msg: "Collecting data points and metrics..." },
-            { id: "step-4", percent: 80, msg: "Filtering database entries with ChromaDB..." },
-            { id: "step-5", percent: 100, msg: "Synthesizing insights and generating summary..." }
-        ];
+        // Start step-by-step progress loading animation. Deep Search runs a
+        // multi-provider fallback chain + source reading + LLM synthesis, so it
+        // genuinely takes longer than the other platforms - the step copy below
+        // reflects what's actually happening for it.
+        const isDeepSearch = platform === "Deep Search";
+        const steps = isDeepSearch
+            ? [
+                { id: "step-1", percent: 15, msg: "Connecting to the search fallback chain..." },
+                { id: "step-2", percent: 35, msg: "Searching DuckDuckGo / Serper / Tavily / Exa..." },
+                { id: "step-3", percent: 55, msg: "Reading full source pages with Jina Reader..." },
+                { id: "step-4", percent: 80, msg: "Summarizing each source with Groq..." },
+                { id: "step-5", percent: 100, msg: "Writing the final research article..." }
+            ]
+            : [
+                { id: "step-1", percent: 20, msg: "Connecting to agent environment..." },
+                { id: "step-2", percent: 40, msg: "Searching feeds and scrapers..." },
+                { id: "step-3", percent: 60, msg: "Collecting data points and metrics..." },
+                { id: "step-4", percent: 80, msg: "Filtering database entries with ChromaDB..." },
+                { id: "step-5", percent: 100, msg: "Synthesizing insights and generating summary..." }
+            ];
 
         let currentStepIndex = 0;
 
         function runNextStep() {
             if (currentStepIndex >= steps.length || loadingFinished) return;
-            
+
             const step = steps[currentStepIndex];
             const stepEl = document.getElementById(step.id);
-            
+
             // Mark previous steps as completed
             for (let i = 0; i < currentStepIndex; i++) {
                 const prevStep = document.getElementById(steps[i].id);
@@ -182,11 +204,13 @@ document.addEventListener("DOMContentLoaded", () => {
             stepEl.classList.add("active");
             loadingStatus.textContent = step.msg;
             loadingProgressBar.style.width = `${step.percent}%`;
-            
+
             currentStepIndex++;
-            
-            // Trigger next step after artificial delay to show off beautiful transitions
-            setTimeout(runNextStep, 1500);
+
+            // Trigger next step after artificial delay to show off beautiful transitions.
+            // Deep Search genuinely takes longer (multiple LLM calls), so its steps
+            // advance more slowly instead of racing ahead of the real request.
+            setTimeout(runNextStep, isDeepSearch ? 3000 : 1500);
         }
 
         // Run loading steps animation
@@ -208,16 +232,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await response.json();
             activeResearchData = data;
-            
+
             // Save query in search history
             saveSearchToHistory(platform, query);
             totalSearchesCount++;
             localStorage.setItem("total_searches", totalSearchesCount.toString());
-            
+
             // Short delay to ensure steps look organic
             setTimeout(() => {
                 loadingFinished = true;
-                
+
                 // Complete all steps in UI
                 steps.forEach(s => {
                     const el = document.getElementById(s.id);
@@ -225,13 +249,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     el.classList.add("completed");
                 });
                 loadingProgressBar.style.width = "100%";
-                
+
                 setTimeout(() => {
                     // Transition to result card
                     loadingCard.classList.add("hidden");
                     resultsSection.classList.remove("hidden");
                     renderResultCard(data);
-                    
+
                     // Reset follow-up chat
                     chatMessages.innerHTML = `
                         <div class="chat-message assistant">
@@ -245,7 +269,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     updateStatsUI();
                     renderRecentSearches();
                 }, 800);
-            }, 3000);
+            }, isDeepSearch ? 500 : 3000);
 
         } catch (error) {
             console.error(error);
@@ -268,19 +292,27 @@ document.addEventListener("DOMContentLoaded", () => {
         card.className = "glass-card result-card";
 
         const platformClass = data.platform.toLowerCase().replace(" ", "-");
-        const platformIconMap = {
-            "youtube": "youtube",
-            "instagram": "instagram",
-            "linkedin": "linkedin",
-            "pdf documents": "file-text"
-        };
-        const iconName = platformIconMap[data.platform.toLowerCase()] || "link-2";
+        const iconName = PLATFORM_ICON_MAP[data.platform.toLowerCase()] || "link-2";
 
         // Check if bookmark already exists
         const isBookmarked = bookmarksList.some(item => item.title === data.title);
         const bookmarkBtnClass = isBookmarked ? "btn-primary" : "btn-secondary";
         const bookmarkText = isBookmarked ? "Bookmarked" : "Bookmark";
         const bookmarkIcon = isBookmarked ? "check" : "bookmark";
+
+        // Deep Search returns every source URL it actually read, in addition to
+        // a single "main" source - show the full list so results are auditable.
+        const sourceUrls = Array.isArray(data.source_urls) ? data.source_urls : [];
+        const sourcesListHtml = sourceUrls.length > 0
+            ? `
+                <div class="result-sources-list">
+                    <h5>Sources Used (${sourceUrls.length})</h5>
+                    <ol>
+                        ${sourceUrls.map(url => `<li><a href="${url}" target="_blank" rel="noopener">${escapeHtml(url)}</a></li>`).join("")}
+                    </ol>
+                </div>
+              `
+            : "";
 
         card.innerHTML = `
             <div class="result-header">
@@ -291,6 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </span>
             </div>
             <div class="result-summary">${formatResearchReport(data.summary)}</div>
+            ${sourcesListHtml}
             <a href="${data.source}" target="_blank" class="result-source">
                 <i data-lucide="external-link"></i>
                 Source URL Link
@@ -321,7 +354,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // ---------------------------------------------------------
         // Result Action Handlers
         // ---------------------------------------------------------
-        
+
         // Copy summary to clipboard
         document.getElementById("action-copy").addEventListener("click", () => {
             navigator.clipboard.writeText(data.summary).then(() => {
@@ -339,7 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("action-bookmark").addEventListener("click", () => {
             const index = bookmarksList.findIndex(item => item.title === data.title);
             const btn = document.getElementById("action-bookmark");
-            
+
             if (index > -1) {
                 // Remove bookmark
                 bookmarksList.splice(index, 1);
@@ -427,9 +460,9 @@ document.addEventListener("DOMContentLoaded", () => {
     function appendMessage(sender, text) {
         const msg = document.createElement("div");
         msg.className = `chat-message ${sender}`;
-        
+
         const avatarIcon = sender === "user" ? "user" : "sparkles";
-        
+
         msg.innerHTML = `
             <div class="chat-message-avatar"><i data-lucide="${avatarIcon}"></i></div>
             <div class="chat-message-bubble">${escapeHtml(text)}</div>
@@ -479,7 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
         statTotal.textContent = totalSearchesCount.toString();
         statBookmarks.textContent = bookmarksCount.toString();
         historyBadge.textContent = searchHistory.length.toString();
-        
+
         // Calculate Favorite platform
         if (searchHistory.length > 0) {
             const counts = {};
@@ -502,7 +535,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderRecentSearches() {
         recentSearchesList.innerHTML = "";
-        
+
         if (searchHistory.length === 0) {
             recentSearchesList.innerHTML = `
                 <div class="empty-recent-state">
@@ -517,15 +550,9 @@ document.addEventListener("DOMContentLoaded", () => {
         searchHistory.forEach(item => {
             const el = document.createElement("div");
             el.className = "recent-item";
-            
+
             const platformClass = item.platform.toLowerCase().replace(" ", "-");
-            const platformIconMap = {
-                "youtube": "youtube",
-                "instagram": "instagram",
-                "linkedin": "linkedin",
-                "pdf documents": "file-text"
-            };
-            const iconName = platformIconMap[item.platform.toLowerCase()] || "link-2";
+            const iconName = PLATFORM_ICON_MAP[item.platform.toLowerCase()] || "link-2";
 
             el.innerHTML = `
                 <div class="recent-item-icon ${platformClass === 'pdf-documents' ? 'pdf' : platformClass}">
@@ -542,7 +569,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 platformSelect.value = item.platform;
                 queryInput.value = item.query;
                 queryInput.focus();
-                
+
                 // Show homepage if not active
                 document.querySelectorAll(".sidebar-item").forEach(i => i.classList.remove("active"));
                 document.getElementById("nav-home").classList.add("active");
@@ -571,22 +598,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function formatResearchReport(text) {
         if (!text) return "";
-        
+
         let lines = text.split("\n");
         let htmlOutput = [];
         let inList = false;
         let inTable = false;
-        
+
         for (let line of lines) {
             let trimmed = line.trim();
-            
+
             // Handle horizontal rule/divider symbols (--- or ===)
             if (/^[-=_*]{3,}$/.test(trimmed)) {
                 if (inList) { htmlOutput.push("</ul>"); inList = false; }
                 htmlOutput.push('<div class="report-divider"></div>');
                 continue;
             }
-            
+
             // Handle Headers (###, ##, #)
             if (trimmed.startsWith("#")) {
                 if (inList) { htmlOutput.push("</ul>"); inList = false; }
@@ -601,7 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 continue;
             }
-            
+
             // Handle List Items (* or - or •)
             if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
                 if (!inList) {
@@ -612,22 +639,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 htmlOutput.push(`<li>${parseInlineMarkdown(itemText)}</li>`);
                 continue;
             }
-            
+
             // Close list if line is not list item
             if (inList && trimmed !== "") {
                 htmlOutput.push("</ul>");
                 inList = false;
             }
-            
+
             // Handle Table rows
             if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
                 if (trimmed.includes("---")) continue; // skip divider row
-                
+
                 if (!inTable) {
                     htmlOutput.push('<div class="report-table-wrapper"><table class="report-table">');
                     inTable = true;
                 }
-                
+
                 let cells = trimmed.split("|").slice(1, -1).map(c => c.trim());
                 htmlOutput.push('<tr>');
                 for (let cell of cells) {
@@ -641,36 +668,36 @@ document.addEventListener("DOMContentLoaded", () => {
                 htmlOutput.push('</tr>');
                 continue;
             }
-            
+
             // Close table if line is not table row
             if (inTable && !trimmed.startsWith("|")) {
                 htmlOutput.push("</table></div>");
                 inTable = false;
             }
-            
+
             // Handle normal paragraphs
             if (trimmed !== "") {
                 htmlOutput.push(`<p class="report-paragraph">${parseInlineMarkdown(trimmed)}</p>`);
             }
         }
-        
+
         if (inList) htmlOutput.push("</ul>");
         if (inTable) htmlOutput.push("</table></div>");
-        
+
         return htmlOutput.join("\n");
     }
 
     function parseInlineMarkdown(text) {
         // Escape standard HTML first
         let escaped = escapeHtml(text);
-        
+
         // Replace **bold** with <strong>bold</strong>
         escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-        
+
         // Replace *italic* or _italic_ with <em>italic</em>
         escaped = escaped.replace(/\*(.*?)\*/g, "<em>$1</em>");
         escaped = escaped.replace(/_(.*?)_/g, "<em>$1</em>");
-        
+
         return escaped;
     }
 });

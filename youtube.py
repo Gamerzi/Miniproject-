@@ -4,6 +4,11 @@ from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright
 from groq import Groq
+from dotenv import load_dotenv
+
+# Load environment variables from .env (must be in the same folder as this
+# script, or the project root if you run this via app.py)
+load_dotenv()
 
 
 # =========================================================
@@ -137,13 +142,12 @@ def build_context(videos):
 
 
 def get_groq_client():
-    api_key = "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"
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError(
             "GROQ_API_KEY environment variable not set. "
-            "Set it before running, e.g.:\n"
-            "  Windows (PowerShell): $env:GROQ_API_KEY='your_key_here'\n"
-            "  macOS/Linux: export GROQ_API_KEY='your_key_here'"
+            "Add it to your .env file, e.g.:\n"
+            "  GROQ_API_KEY=your_key_here"
         )
     return Groq(api_key=api_key)
 

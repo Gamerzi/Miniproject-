@@ -1,5 +1,20 @@
+import os
+
 import chromadb
 from groq import Groq
+from dotenv import load_dotenv
+
+# Load environment variables from .env (must be in the same folder as this
+# script, or pass load_dotenv(dotenv_path="/path/to/.env"))
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    raise RuntimeError(
+        "GROQ_API_KEY is not set. Add it to your .env file "
+        "(get a key at https://console.groq.com/keys)."
+    )
 
 # Paths
 DATA_PATH = r"data"
@@ -25,9 +40,7 @@ print("\nRetrieved Context:\n")
 print(results["documents"])
 
 # Groq Client
-client = Groq(
-    api_key="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"
-)
+client = Groq(api_key=GROQ_API_KEY)
 
 # System Prompt
 system_prompt = f"""

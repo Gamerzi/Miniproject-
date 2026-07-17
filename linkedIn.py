@@ -3,14 +3,22 @@ from urllib.parse import quote
 
 from playwright.sync_api import sync_playwright
 from groq import Groq
+from dotenv import load_dotenv
+
+# Load environment variables from .env (must be in the same folder as this
+# script, or the project root if you run this via app.py)
+load_dotenv()
 
 PROFILE_DIR = r"C:\Users\sasti\playwright_li_profile"
 
 
 def get_groq_client():
-    api_key = "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"
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise RuntimeError("Set GROQ_API_KEY as an environment variable first.")
+        raise RuntimeError(
+            "GROQ_API_KEY is not set. Add it to your .env file "
+            "(get a key at https://console.groq.com/keys)."
+        )
     return Groq(api_key=api_key)
 
 

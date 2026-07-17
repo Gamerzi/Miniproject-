@@ -1,15 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Research Assistant - Premium Multi-Platform Insights</title>
     <!-- Meta Descriptions for SEO -->
-    <meta name="description" content="An advanced, premium AI Research Assistant. Research YouTube, Instagram, LinkedIn, and local PDF documents seamlessly. Get instant summaries and interactive follow-ups.">
+    <meta name="description"
+        content="An advanced, premium AI Research Assistant. Research YouTube, Instagram, LinkedIn, the open web, and local PDF documents seamlessly. Get instant summaries and interactive follow-ups.">
     <!-- Google Fonts: Outfit (headings) & Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Stylesheet -->
@@ -17,6 +21,7 @@
     <!-- JavaScript -->
     <script src="{{ url_for('static', path='js/script.js') }}" defer></script>
 </head>
+
 <body class="dark-theme">
     <!-- Floating Background Blur Circles -->
     <div class="bg-glow blob-indigo"></div>
@@ -44,7 +49,8 @@
             <button class="icon-btn" id="settings-toggle" title="Settings" aria-label="Settings">
                 <i data-lucide="sliders"></i>
             </button>
-            <a href="https://github.com" target="_blank" class="icon-btn github-btn" title="GitHub Repository" aria-label="GitHub Repository">
+            <a href="https://github.com" target="_blank" class="icon-btn github-btn" title="GitHub Repository"
+                aria-label="GitHub Repository">
                 <i data-lucide="github"></i>
             </a>
             <button class="icon-btn right-panel-toggle-btn" id="right-panel-toggle" aria-label="Toggle Statistics">
@@ -101,7 +107,8 @@
                 <!-- Large Hero Section -->
                 <section class="hero-section" id="hero-area">
                     <h1 class="hero-title">AI Research Assistant</h1>
-                    <p class="hero-subtitle">Research YouTube, Instagram, LinkedIn, and your own documents instantly with advanced intelligence.</p>
+                    <p class="hero-subtitle">Research YouTube, Instagram, LinkedIn, the open web, and your own documents
+                        instantly with advanced intelligence.</p>
                 </section>
 
                 <!-- Search Card -->
@@ -110,9 +117,11 @@
                         <form id="search-form">
                             <div class="form-row">
                                 <div class="input-group select-group">
-                                    <label for="platform-select"><i data-lucide="layers" class="label-icon"></i> Research Platform</label>
+                                    <label for="platform-select"><i data-lucide="layers" class="label-icon"></i>
+                                        Research Platform</label>
                                     <div class="custom-select-wrapper">
                                         <select id="platform-select" required>
+                                            <option value="Deep Search" data-icon="globe">Deep Search (Web)</option>
                                             <option value="YouTube" data-icon="youtube">YouTube</option>
                                             <option value="Instagram" data-icon="instagram">Instagram</option>
                                             <option value="LinkedIn" data-icon="linkedin">LinkedIn</option>
@@ -124,10 +133,14 @@
 
                             <div class="form-row">
                                 <div class="input-group textarea-group">
-                                    <label for="query-input"><i data-lucide="message-square" class="label-icon"></i> Research Topic or Query</label>
+                                    <label for="query-input"><i data-lucide="message-square" class="label-icon"></i>
+                                        Research Topic or Query</label>
                                     <div class="input-with-button">
-                                        <textarea id="query-input" rows="3" placeholder="What would you like to research? E.g., 'Latest trends in glassmorphism design'..." required></textarea>
-                                        <button type="submit" class="btn btn-primary btn-glow btn-ripple" id="start-research-btn">
+                                        <textarea id="query-input" rows="3"
+                                            placeholder="What would you like to research? E.g., 'Latest trends in glassmorphism design'..."
+                                            required></textarea>
+                                        <button type="submit" class="btn btn-primary btn-glow btn-ripple"
+                                            id="start-research-btn">
                                             <i data-lucide="sparkles"></i>
                                             <span>Start Research</span>
                                         </button>
@@ -197,7 +210,8 @@
                 <div class="results-section-wrapper hidden" id="results-section">
                     <div class="section-title-bar">
                         <h2>Research Discovery</h2>
-                        <button class="btn btn-secondary btn-icon-only" id="reset-search-btn" title="Start New Research">
+                        <button class="btn btn-secondary btn-icon-only" id="reset-search-btn"
+                            title="Start New Research">
                             <i data-lucide="refresh-cw"></i>
                         </button>
                     </div>
@@ -215,19 +229,22 @@
                                 <p>Deepen your insights by asking additional clarifying questions</p>
                             </div>
                         </div>
-                        
+
                         <div class="chat-messages" id="chat-messages">
                             <div class="chat-message assistant">
                                 <div class="chat-message-avatar"><i data-lucide="sparkles"></i></div>
                                 <div class="chat-message-bubble">
-                                    I have compiled the initial intelligence. What specific aspects would you like to explore further or refine?
+                                    I have compiled the initial intelligence. What specific aspects would you like to
+                                    explore further or refine?
                                 </div>
                             </div>
                         </div>
 
                         <form id="chat-form" class="chat-input-wrapper">
-                            <input type="text" id="chat-input" placeholder="Ask a follow-up question about the results..." required autocomplete="off">
-                            <button type="submit" class="btn btn-primary chat-send-btn btn-ripple" aria-label="Send message">
+                            <input type="text" id="chat-input"
+                                placeholder="Ask a follow-up question about the results..." required autocomplete="off">
+                            <button type="submit" class="btn btn-primary chat-send-btn btn-ripple"
+                                aria-label="Send message">
                                 <i data-lucide="send"></i>
                             </button>
                         </form>
@@ -245,7 +262,7 @@
         <aside class="right-panel" id="app-right-panel">
             <div class="right-panel-section">
                 <h3 class="panel-section-title"><i data-lucide="pie-chart"></i> Research Analytics</h3>
-                
+
                 <div class="stats-grid">
                     <div class="stat-card">
                         <span class="stat-value" id="stat-total">0</span>
@@ -278,10 +295,12 @@
                         <div class="status-dot online"></div>
                         <span class="status-text">LLM Services Operational</span>
                     </div>
-                    <p class="status-detail">Connected to Groq (gpt-oss-20b) and local ChromaDB environment.</p>
+                    <p class="status-detail">Connected to Groq (gpt-oss-20b), the Deep Search web-research chain, and
+                        local ChromaDB environment.</p>
                 </div>
             </div>
         </aside>
     </div>
 </body>
+
 </html>

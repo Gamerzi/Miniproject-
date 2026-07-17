@@ -4,9 +4,22 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import time
 import os
 import shutil
+
+# ---------------------------------------------------------------------------
+# Load environment variables from .env (must sit next to this file, or set
+# the path explicitly: load_dotenv(dotenv_path="/path/to/.env"))
+# ---------------------------------------------------------------------------
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+EXA_API_KEY = os.getenv("EXA_API_KEY")
+JINA_API_KEY = os.getenv("JINA_API_KEY")
 
 app = FastAPI(title="AI Research Assistant")
 
@@ -17,13 +30,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 templates.env.cache = None
 
+
 class ResearchRequest(BaseModel):
     platform: str
     query: str
 
+
 class ChatRequest(BaseModel):
     query: str
     context: str
+
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -48,60 +64,60 @@ def run_db_sync_sync():
     from langchain_community.document_loaders import PyPDFDirectoryLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     import chromadb
-    
+
     logs = []
     logs.append("Sync process started...")
-    
+
     DATA_PATH = r"data"
     CHROMA_PATH = r"chroma_db"
-    
+
     if not os.path.exists(DATA_PATH) or len(os.listdir(DATA_PATH)) == 0:
         logs.append("Error: No documents found in data folder!")
         return {"status": "error", "logs": logs}
-        
+
     logs.append(f"Ingesting documents from '{DATA_PATH}'...")
     try:
         loader = PyPDFDirectoryLoader(DATA_PATH)
         raw_documents = loader.load()
         logs.append(f"Loaded {len(raw_documents)} raw document pages.")
-        
+
         if len(raw_documents) == 0:
             logs.append("Error: Loaded 0 document pages. Ingestion aborted.")
             return {"status": "error", "logs": logs}
-            
+
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=300,
             chunk_overlap=100,
             length_function=len,
             is_separator_regex=False,
         )
-        
+
         chunks = text_splitter.split_documents(raw_documents)
         logs.append(f"Split documents into {len(chunks)} text chunks.")
-        
+
         documents = []
         metadata = []
         ids = []
-        
+
         for i, chunk in enumerate(chunks):
             documents.append(chunk.page_content)
             metadata.append(chunk.metadata)
             ids.append(f"ID{i}")
-            
+
         chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = chroma_client.get_or_create_collection(name="business_manual")
-        
+
         logs.append("Upserting chunks to ChromaDB collection 'business_manual'...")
         collection.upsert(
             documents=documents,
             metadatas=metadata,
             ids=ids
         )
-        
+
         logs.append("ChromaDB collection successfully updated!")
         logs.append("Database synchronization complete.")
         return {"status": "success", "logs": logs}
-        
+
     except Exception as e:
         import traceback
         error_msg = f"Exception: {str(e)}"
@@ -119,6 +135,32 @@ async def sync_database():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def run_deep_search_sync(query_topic: str):
+    """Runs the multi-source fallback-chain research agent (DuckDuckGo -> Serper ->
+    Tavily -> Exa, then Jina Reader + Groq) and shapes the result the same way the
+    other platform handlers do, so the existing frontend can render it unchanged."""
+    from research import ResearchAgent
+
+    # ResearchAgent is expected to read SERPER_API_KEY / TAVILY_API_KEY /
+    # EXA_API_KEY / JINA_API_KEY / GROQ_API_KEY itself via os.getenv(...),
+    # since load_dotenv() above already populated the process environment.
+    agent = ResearchAgent(llm_model="openai/gpt-oss-20b", max_results=5, output_dir="reports")
+    article_markdown, report_path, source_urls = agent.research(query_topic, verbose=True)
+
+    main_source = source_urls[0] if source_urls else (
+        f"https://duckduckgo.com/?q={query_topic.replace(' ', '+')}"
+    )
+
+    return {
+        "title": f"Deep Research: '{query_topic}'",
+        "summary": article_markdown,
+        "source": main_source,
+        "platform": "Deep Search",
+        "report_path": report_path,
+        "source_urls": source_urls,
+    }
+
+
 def run_research_sync(platform_name: str, query_topic: str):
     if platform_name.lower() == "youtube":
         import youtube
@@ -133,7 +175,7 @@ def run_research_sync(platform_name: str, query_topic: str):
         client = youtube.get_groq_client()
         context = youtube.build_context(videos)
         report = youtube.generate_research_report(client, query_topic, videos, context)
-        
+
         main_source = videos[0]["url"] if videos else f"https://www.youtube.com/results?search_query={query_topic.replace(' ', '+')}"
         return {
             "title": f"YouTube Research: '{query_topic}'",
@@ -141,7 +183,7 @@ def run_research_sync(platform_name: str, query_topic: str):
             "source": main_source,
             "platform": "YouTube"
         }
-        
+
     elif platform_name.lower() == "instagram":
         import instgram
         posts = instgram.search_instagram(query_topic, max_results=5)
@@ -154,7 +196,7 @@ def run_research_sync(platform_name: str, query_topic: str):
             }
         client = instgram.get_groq_client()
         report = instgram.generate_report(client, query_topic, posts)
-        
+
         main_source = posts[0]["url"] if posts else f"https://www.instagram.com/explore/tags/{query_topic.replace(' ', '')}/"
         return {
             "title": f"Instagram Research: #{query_topic.replace(' ', '')}",
@@ -162,7 +204,7 @@ def run_research_sync(platform_name: str, query_topic: str):
             "source": main_source,
             "platform": "Instagram"
         }
-        
+
     elif platform_name.lower() == "linkedin":
         import linkedIn
         posts = linkedIn.search_linkedin(query_topic, max_results=5)
@@ -175,7 +217,7 @@ def run_research_sync(platform_name: str, query_topic: str):
             }
         client = linkedIn.get_groq_client()
         report = linkedIn.generate_report(client, query_topic, posts)
-        
+
         main_source = posts[0]["profileUrl"] if posts else f"https://www.linkedin.com/search/results/content/?keywords={query_topic.replace(' ', '%20')}"
         return {
             "title": f"LinkedIn Research: '{query_topic}'",
@@ -183,23 +225,28 @@ def run_research_sync(platform_name: str, query_topic: str):
             "source": main_source,
             "platform": "LinkedIn"
         }
-        
+
     elif platform_name.lower() == "pdf documents":
         import chromadb
         from groq import Groq
-        
+
         CHROMA_PATH = r"chroma_db"
         chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
         collection = chroma_client.get_or_create_collection(name="business_manual")
-        
+
         results = collection.query(
             query_texts=[query_topic],
             n_results=6
         )
-        
+
         context_docs = results["documents"]
-        
-        client = Groq(api_key="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")
+
+        if not GROQ_API_KEY:
+            raise RuntimeError(
+                "GROQ_API_KEY is not set. Add it to your .env file "
+                "(get a key at https://console.groq.com/keys)."
+            )
+        client = Groq(api_key=GROQ_API_KEY)
         system_prompt = f"""
 You are a helpful AI assistant.
 
@@ -224,27 +271,36 @@ Context:
             ]
         )
         answer = response.choices[0].message.content.strip()
-        
+
         main_source = "data/svl.pdf"
         if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > 0:
             source_meta = results["metadatas"][0][0].get("source")
             if source_meta:
                 main_source = source_meta
-                
+
         return {
             "title": f"Document Query: '{query_topic}'",
             "summary": answer,
             "source": main_source,
             "platform": "PDF Documents"
         }
+
+    elif platform_name.lower() == "deep search":
+        return run_deep_search_sync(query_topic)
+
     else:
         raise ValueError("Unsupported platform selected")
 
 
 def run_chat_sync(query: str, context: str):
     from groq import Groq
-    client = Groq(api_key="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")
-    
+    if not GROQ_API_KEY:
+        raise RuntimeError(
+            "GROQ_API_KEY is not set. Add it to your .env file "
+            "(get a key at https://console.groq.com/keys)."
+        )
+    client = Groq(api_key=GROQ_API_KEY)
+
     system_prompt = f"""
 You are a research assistant. Answer the user's follow-up question based on the research context provided below.
 Be helpful, precise, and professional.
@@ -267,7 +323,7 @@ Context:
 async def do_research(req: ResearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
+
     try:
         result = await run_in_threadpool(run_research_sync, req.platform, req.query)
         return result
@@ -281,7 +337,7 @@ async def do_research(req: ResearchRequest):
 async def do_chat(req: ChatRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
+
     try:
         answer = await run_in_threadpool(run_chat_sync, req.query, req.context)
         return {"response": answer}
